@@ -14,6 +14,7 @@ import requests
 import shutil
 import re
 import urllib
+from urllib.parse import quote, unquote
 
 
 class ConfluenceException(Exception):
@@ -74,10 +75,11 @@ def write_2_file(path, content):
     :param content: String content to persist.
     """
     try:
-        with open(path, 'w') as the_file:
-            the_file.write(content.encode('utf8'))
-    except:
-        print("File could not be written")
+        # Write content directly as a string
+        with open(path, 'w', encoding='utf-8') as the_file:
+            the_file.write(content)
+    except Exception as e:
+        print(f"File could not be written: {e}")
 
 def write_html_2_file(path, title, content, html_template, additional_headers=None):
     """ Writes HTML content to a file using a template.
@@ -94,10 +96,11 @@ def write_html_2_file(path, title, content, html_template, additional_headers=No
     additional_html_headers = '\n\t'.join(additional_headers) if additional_headers else ''
 
     # Replace placeholders
-    # Note: One backslash has to be escaped with two avoid that backslashes are interpreted as escape chars
+    # Note: One backslash has to be escaped with two to avoid that backslashes are interpreted as escape chars
     replacements = {'title': title, 'content': content, 'additional_headers': additional_html_headers}
 
-    for placeholder, replacement in replacements.iteritems():
+    # Replace iteritems() with items() for Python 3 compatibility
+    for placeholder, replacement in replacements.items():
         regex_placeholder = r'{%\s*' + placeholder + r'\s*%\}'
         try:
             html_content = re.sub(regex_placeholder, replacement.replace('\\', '\\\\'), html_content,
