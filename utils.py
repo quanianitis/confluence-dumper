@@ -110,7 +110,6 @@ def write_html_2_file(path, title, content, html_template, additional_headers=No
 
     write_2_file(path, html_content)
 
-
 def sanitize_for_filename(original_string):
     """ Sanitizes a string to use it as a filename on most filesystems.
 
@@ -127,7 +126,7 @@ def decode_url(encoded_url):
     :param encoded_url: Encoded URL.
     :returns: Decoded URL.
     """
-    return urllib.unquote(encoded_url.encode('utf8')).decode('utf8')
+    return unquote(encoded_url)
 
 
 def encode_url(decoded_url):
@@ -136,7 +135,7 @@ def encode_url(decoded_url):
     :param decoded_url: Decoded URL.
     :returns: Encoded URL.
     """
-    return urllib.quote(decoded_url.encode('utf8')).encode('utf8')
+    return quote(decoded_url)
 
 
 def is_file_format(file_name, file_extensions):
