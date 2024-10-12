@@ -464,27 +464,31 @@ def main():
     for space in spaces_to_export:
         space_counter += 1
 
-        # Create folders for this space
-        space_folder_name = provide_unique_file_name(duplicate_space_names, space_matching, space, is_folder=True)
-        space_folder = '%s/%s' % (settings.EXPORT_FOLDER, space_folder_name)
         try:
-            os.makedirs(space_folder)
-            download_folder = '%s/%s' % (space_folder, settings.DOWNLOAD_SUB_FOLDER)
-            os.makedirs(download_folder)
-
-            space_url = '%s/rest/api/space/%s?expand=homepage' % (settings.CONFLUENCE_BASE_URL, space)
+            space_url = '%s/wiki/api/v2/spaces/%s?expand=homepage' % (settings.CONFLUENCE_BASE_URL, space)
             response = utils.http_get(space_url, auth=settings.HTTP_AUTHENTICATION,
                                       headers=settings.HTTP_CUSTOM_HEADERS,
                                       verify_peer_certificate=settings.VERIFY_PEER_CERTIFICATE,
                                       proxies=settings.HTTP_PROXIES)
             space_name = response['name']
+            # if "homepage" in response.keys():
+            space_page_id = response['homepageId']
+            # else:
+            #     space_page_id = -1
+
+            # Create folders for this space
+            space_folder_name = provide_unique_file_name(duplicate_space_names, space_matching, space, is_folder=True)
+            space_folder_name_with_title = f"{space_folder_name}_{space_name}"
+            space_folder = '%s/%s' % (settings.EXPORT_FOLDER, space_folder_name_with_title)
+
+            os.makedirs(space_folder)
+            download_folder = '%s/%s' % (space_folder, settings.DOWNLOAD_SUB_FOLDER)
+            os.makedirs(download_folder)
+
+            print("Exporting this page %s" % space)
 
             print('SPACE (%d/%d): %s (%s)' % (space_counter, len(spaces_to_export), space_name, space))
 
-            if "homepage" in response.keys():
-                space_page_id = response['homepage']['id']
-            else:
-                space_page_id = -1
 
             path_collection = fetch_page_recursively(space_page_id, space_folder, download_folder, html_template)
 
