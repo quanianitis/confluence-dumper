@@ -267,13 +267,12 @@ def create_html_attachment_index(attachments):
             relative_file_path = utils.encode_url(relative_file_path)
             html_content += '\t<li><a href="%s">%s</a></li>\n' % (relative_file_path, attachment['file_name'])
         html_content += '</ul>\n'
+    print(html_content)
     return html_content
 
-
 def fetch_page_recursively(page_id, folder_path, download_folder, html_template, depth=0,
-                           page_duplicate_file_names=None, page_file_matching=None,
-                           attachment_duplicate_file_names=None, attachment_file_matching=None):
-    """ Fetches a Confluence page and its child pages (with referenced downloads).
+                           page_duplicate_file_names=None, page_file_matching=None):
+    """ Fetches a Confluence page and its child pages (without attachments).
 
     :param page_id: Confluence page id.
     :param folder_path: Folder to place downloaded pages in.
@@ -282,27 +281,23 @@ def fetch_page_recursively(page_id, folder_path, download_folder, html_template,
     :param depth: (optional) Hierarchy depth of the handled Confluence page.
     :param page_duplicate_file_names: A dict in the structure {'<sanitized page filename>': amount of duplicates}
     :param page_file_matching: A dict in the structure {'<page title>': '<used offline filename>'}
-    :param attachment_duplicate_file_names: A dict in the structure {'<sanitized attachment filename>': amount of \
-                                            duplicates}
-    :param attachment_file_matching: A dict in the structure {'<attachment title>': '<used offline filename>'}
-    :returns: Information about downloaded files (pages, attachments, images, ...) as a dict (None for exceptions)
+    :returns: Information about downloaded pages as a dict (None for exceptions)
     """
     if not page_duplicate_file_names:
         page_duplicate_file_names = {}
     if not page_file_matching:
         page_file_matching = {}
-    if not attachment_duplicate_file_names:
-        attachment_duplicate_file_names = {}
-    if not attachment_file_matching:
-        attachment_file_matching = {}
 
-    page_url = '%s/rest/api/content/%s?expand=children.page,children.attachment,body.view.value' \
-               % (settings.CONFLUENCE_BASE_URL, page_id)
+    page_url = '%s/wiki/rest/api/content/%s?expand=children.page,body.view.value' % (settings.CONFLUENCE_BASE_URL, page_id)
     try:
         response = utils.http_get(page_url, auth=settings.HTTP_AUTHENTICATION, headers=settings.HTTP_CUSTOM_HEADERS,
                                   verify_peer_certificate=settings.VERIFY_PEER_CERTIFICATE,
                                   proxies=settings.HTTP_PROXIES)
         page_content = response['body']['view']['value']
+        
+        # Convert `page_content` to string if it's in `bytes`
+        if isinstance(page_content, bytes):
+            page_content = page_content.decode('utf-8')        
 
         page_title = response['title']
         print('%sPAGE: %s (%s)' % ('\t'*(depth+1), page_title, page_id))
@@ -312,37 +307,27 @@ def fetch_page_recursively(page_id, folder_path, download_folder, html_template,
                                              explicit_file_extension='html')
 
         # Remember this file and all children
-        path_collection = {'file_path': file_name, 'page_title': page_title, 'child_pages': [], 'child_attachments': []}
-
-        # Download attachments of this page
-        # TODO: Outsource/Abstract the following two while loops because of much duplicate code.
-        page_url = '%s/rest/api/content/%s/child/attachment?limit=25' % (settings.CONFLUENCE_BASE_URL, page_id)
-        counter = 0
-        while page_url:
-            response = utils.http_get(page_url, auth=settings.HTTP_AUTHENTICATION, headers=settings.HTTP_CUSTOM_HEADERS,
-                                      verify_peer_certificate=settings.VERIFY_PEER_CERTIFICATE,
-                                      proxies=settings.HTTP_PROXIES)
-            counter += len(response['results'])
-            for attachment in response['results']:
-                download_url = attachment['_links']['download']
-                attachment_id = attachment['id'][3:]
-                attachment_info = download_attachment(download_url, download_folder, attachment_id,
-                                                      attachment_duplicate_file_names, attachment_file_matching,
-                                                      depth=depth+1)
-                path_collection['child_attachments'].append(attachment_info)
-
-            if 'next' in response['_links'].keys():
-                page_url = response['_links']['next']
-                page_url = '%s%s' % (settings.CONFLUENCE_BASE_URL, page_url)
-            else:
-                page_url = None
+        path_collection = {'file_path': file_name, 'page_title': page_title, 'child_pages': []}
 
         # Export HTML file
         page_content = handle_html_references(page_content, page_duplicate_file_names, page_file_matching,
-                                              depth=depth+1)
-        file_path = '%s/%s' % (folder_path, file_name)
-        page_content += create_html_attachment_index(path_collection['child_attachments'])
-        utils.write_html_2_file(file_path, page_title, page_content, html_template)
+                                              depth=depth + 1)
+        
+        # Ensure `page_content` is a string
+        if not isinstance(page_content, str):
+            page_content = str(page_content)
+        
+        file_path = f'{folder_path}/{file_name}'
+        
+        # Use a try-except block to catch file-writing issues
+        try:
+            utils.write_html_2_file(file_path, page_title, page_content, html_template)
+        except IOError as e:
+            print(f"IOError: {e}")
+        except OSError as e:
+            print(f"OSError: {e}")
+        except Exception as e:
+            print(f"Unexpected error: {e}")        
 
         # Save another file with page id which forwards to the original one
         id_file_path = '%s/%s.html' % (folder_path, page_id)
@@ -350,11 +335,14 @@ def fetch_page_recursively(page_id, folder_path, download_folder, html_template,
         original_file_link = utils.encode_url(utils.sanitize_for_filename(file_name))
         id_file_page_content = settings.HTML_FORWARD_MESSAGE % (original_file_link, page_title)
         id_file_forward_header = '<meta http-equiv="refresh" content="0; url=%s" />' % original_file_link
+
+        if not isinstance(id_file_page_content, str):
+            id_file_page_content = str(id_file_page_content)
+
         utils.write_html_2_file(id_file_path, id_file_page_title, id_file_page_content, html_template,
                                 additional_headers=[id_file_forward_header])
-
         # Iterate through all child pages
-        page_url = '%s/rest/api/content/%s/child/page?limit=25' % (settings.CONFLUENCE_BASE_URL, page_id)
+        page_url = '%s/wiki/rest/api/content/%s/child/page?limit=25' % (settings.CONFLUENCE_BASE_URL, page_id)
         counter = 0
         while page_url:
             response = utils.http_get(page_url, auth=settings.HTTP_AUTHENTICATION, headers=settings.HTTP_CUSTOM_HEADERS,
@@ -441,13 +429,13 @@ def main():
         spaces_to_export = settings.SPACES_TO_EXPORT
     else:
         spaces_to_export = []
-        page_url = '%s/rest/api/space?limit=25' % settings.CONFLUENCE_BASE_URL
+        page_url = '%s/wiki/api/v2/spaces?limit=25' % settings.CONFLUENCE_BASE_URL
         while page_url:
             response = utils.http_get(page_url, auth=settings.HTTP_AUTHENTICATION, headers=settings.HTTP_CUSTOM_HEADERS,
                                       verify_peer_certificate=settings.VERIFY_PEER_CERTIFICATE,
                                       proxies=settings.HTTP_PROXIES)
             for space in response['results']:
-                spaces_to_export.append(space['key'])
+                spaces_to_export.append(space['id'])
 
             if 'next' in response['_links'].keys():
                 page_url = response['_links']['next']
